@@ -247,6 +247,7 @@ int daemon(int, int);  /* defined in libresolv of all places */
 #include "asterisk/security_events.h"
 #include "asterisk/endpoints.h"
 #include "asterisk/codec.h"
+#include "asterisk/metrics.h"
 #include "asterisk/format_cache.h"
 #include "asterisk/media_cache.h"
 #include "asterisk/astdb.h"
@@ -486,6 +487,12 @@ static struct {
 	 unsigned int need_quit:1;
 	 unsigned int need_quit_handler:1;
 } sig_flags;
+
+static float ast_active_channels_metric(void)
+{
+	return (float)ast_active_channels();
+}
+AST_METRIC_FUNC(AST_METRIC_TYPE_GAUGE, core_active_channels_total, "Core channel count", ast_active_channels_metric);
 
 #if !defined(LOW_MEMORY)
 struct registered_file {
@@ -3883,6 +3890,7 @@ static void print_intro_message(const char *runuser, const char *rungroup)
 static void main_atexit(void)
 {
 	ast_cli_unregister_multiple(cli_asterisk, ARRAY_LEN(cli_asterisk));
+	ast_metric_unregister(&core_active_channels_total);
 }
 
 int main(int argc, char *argv[])
@@ -4486,6 +4494,7 @@ static void asterisk_daemon(int isroot, const char *runuser, const char *rungrou
 	check_init(stasis_init(), "Stasis");
 	check_init(ast_stasis_system_init(), "Stasis system-level information");
 	check_init(ast_endpoint_stasis_init(), "Stasis Endpoint");
+	check_init(ast_metrics_init(), "Metrics");
 
 	ast_makesocket();
 	/* GCC 4.9 gives a bogus "right-hand operand of comma expression has
@@ -4585,6 +4594,8 @@ static void asterisk_daemon(int isroot, const char *runuser, const char *rungrou
 	}
 
 	ast_process_pending_reloads();
+
+	ast_metric_register(&core_active_channels_total);
 
 	ast_set_flag(&ast_options, AST_OPT_FLAG_FULLY_BOOTED);
 	publish_fully_booted();

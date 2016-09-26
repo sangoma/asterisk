@@ -102,6 +102,7 @@ ASTERISK_REGISTER_FILE()
 #include "asterisk/callerid.h"
 #include "asterisk/adsi.h"
 #include "asterisk/cli.h"
+#include "asterisk/metrics.h"
 #include "asterisk/pickup.h"
 #include "asterisk/features.h"
 #include "asterisk/musiconhold.h"
@@ -498,6 +499,8 @@ static struct ast_jb_conf default_jbconf =
 	.target_extra = 40,
 };
 static struct ast_jb_conf global_jbconf;
+
+AST_METRIC(AST_METRIC_TYPE_GAUGE, dahdi_channels_total, "Count of DAHDI channels");
 
 /*!
  * \note Define ZHONE_HACK to cause us to go off hook and then back on hook when
@@ -6369,6 +6372,7 @@ hangup_out:
 	}
 	ast_mutex_unlock(&iflock);
 
+	ast_metric_decrement(&dahdi_channels_total);
 	ast_module_unref(ast_module_info->self);
 	return 0;
 }
@@ -9342,6 +9346,7 @@ static struct ast_channel *dahdi_new(struct dahdi_pvt *i, int state, int startpb
 			pbx_builtin_setvar_helper(tmp, "MFCR2_CATEGORY", openr2_proto_get_category_string(i->mfcr2_recvd_category));
 		}
 #endif
+		ast_metric_increment(&dahdi_channels_total);
 		if (ast_pbx_start(tmp)) {
 			ast_log(LOG_WARNING, "Unable to start PBX on %s\n", ast_channel_name(tmp));
 			ast_hangup(tmp);
@@ -17402,6 +17407,8 @@ static int __unload_module(void)
 #endif	/* defined(HAVE_SS7) */
 	ast_cond_destroy(&ss_thread_complete);
 
+	ast_metric_unregister(&dahdi_channels_total);
+
 	dahdi_native_unload();
 
 	ao2_cleanup(dahdi_tech.capabilities);
@@ -19700,6 +19707,7 @@ static int load_module(void)
 	ast_manager_register_xml("PRIDebugFileSet", EVENT_FLAG_SYSTEM, action_pri_debug_file_set);
 	ast_manager_register_xml("PRIDebugFileUnset", 0, action_pri_debug_file_unset);
 #endif	/* defined(HAVE_PRI) */
+	ast_metric_register(&dahdi_channels_total);
 
 	ast_cond_init(&ss_thread_complete, NULL);
 
