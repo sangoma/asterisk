@@ -1,7 +1,7 @@
 /*
  * Asterisk -- An open source telephony toolkit.
  *
- * Copyright (C) 2016, Digium, Inc.
+ * Copyright (C) 2016, Sangoma Technologies, Corp.
  *
  * Moises Silva <msilva@sangoma.com>
  *
@@ -38,16 +38,11 @@ ASTERISK_REGISTER_FILE()
 #include "asterisk/metrics.h"
 #include "asterisk/linkedlists.h"
 
-struct metriclist {
-	struct ast_metric *metric;
-	AST_LIST_ENTRY(metriclist) list;
-};
-
 /* FIXME: Is a linked list the right data structure to use for the metric registry? note
  *        collectd uses an avl tree and given that we'll basically
  *        provide a tree of metrics, perhaps it'd be fitting to use that too? */
 /*! \brief List of metrics */
-static AST_RWLIST_HEAD_STATIC(metrics, metriclist);
+struct ast_metrics ast_metrics = AST_RWLIST_HEAD_INIT_VALUE;
 static uint32_t metric_count = 0;
 
 static const char *ast_metric_type2str(enum ast_metric_type type)
@@ -66,7 +61,7 @@ static const char *ast_metric_type2str(enum ast_metric_type type)
 
 static char *show_metrics(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
-	struct metriclist *ml;
+	struct ast_metric_node *mn;
 
 	switch (cmd) {
 	case CLI_INIT:
@@ -86,15 +81,15 @@ static char *show_metrics(struct ast_cli_entry *e, int cmd, struct ast_cli_args 
 	ast_cli(a->fd, "%-40s %-10s %-80s %-10s\n","NAME","TYPE","DESCRIPTION","VALUE");
 	ast_cli(a->fd, "---------------------------------------------------------------------------------------------------------------------------------------------\n");
 
-	AST_RWLIST_RDLOCK(&metrics);
-	AST_RWLIST_TRAVERSE(&metrics, ml, list) {
+	AST_RWLIST_RDLOCK(&ast_metrics);
+	AST_RWLIST_TRAVERSE(&ast_metrics, mn, list) {
 		ast_cli(a->fd, "%-40s %-10s %-80s %f\n",
-			ml->metric->name,
-			ast_metric_type2str(ml->metric->type),
-			ml->metric->description,
-			ast_metric_value(ml->metric));
+			mn->metric->name,
+			ast_metric_type2str(mn->metric->type),
+			mn->metric->description,
+			ast_metric_value(mn->metric));
 	}
-	AST_RWLIST_UNLOCK(&metrics);
+	AST_RWLIST_UNLOCK(&ast_metrics);
 	ast_cli(a->fd, "---------------------------------------------------------------------------------------------------------------------------------------------\n");
 	ast_cli(a->fd, "%d metrics registered.\n", metric_count);
 
@@ -121,25 +116,25 @@ int ast_metrics_init(void)
 
 int ast_metric_register(struct ast_metric *metric)
 {
-	struct metriclist *ml;
-	AST_RWLIST_WRLOCK(&metrics);
+	struct ast_metric_node *mn;
+	AST_RWLIST_WRLOCK(&ast_metrics);
 
-	AST_RWLIST_TRAVERSE(&metrics, ml, list) {
-		if (!strcasecmp(metric->name, ml->metric->name)) {
-			AST_RWLIST_UNLOCK(&metrics);
+	AST_RWLIST_TRAVERSE(&ast_metrics, mn, list) {
+		if (!strcasecmp(metric->name, mn->metric->name)) {
+			AST_RWLIST_UNLOCK(&ast_metrics);
 			ast_log(LOG_ERROR, "A metric with name %s has already been registered\n", metric->name);
 			return -1;
 		}
 	}
 
-	if (!(ml = ast_calloc(1, sizeof(*ml)))) {
-		AST_RWLIST_UNLOCK(&metrics);
+	if (!(mn = ast_calloc(1, sizeof(*mn)))) {
+		AST_RWLIST_UNLOCK(&ast_metrics);
 		return -1;
 	}
-	ml->metric = metric;
-	AST_RWLIST_INSERT_HEAD(&metrics, ml, list);
+	mn->metric = metric;
+	AST_RWLIST_INSERT_HEAD(&ast_metrics, mn, list);
 	metric_count++;
-	AST_RWLIST_UNLOCK(&metrics);
+	AST_RWLIST_UNLOCK(&ast_metrics);
 
 	ast_debug(1, "Registered metric '%s' ('%s') with type '%s'\n",
 			     metric->name, metric->description, ast_metric_type2str(metric->type));
@@ -148,13 +143,13 @@ int ast_metric_register(struct ast_metric *metric)
 
 int ast_metric_unregister(struct ast_metric *metric)
 {
-	struct metriclist *ml;
-	AST_RWLIST_WRLOCK(&metrics);
+	struct ast_metric_node *mn;
+	AST_RWLIST_WRLOCK(&ast_metrics);
 
-	AST_RWLIST_TRAVERSE_SAFE_BEGIN(&metrics, ml, list) {
-		if (!strcasecmp(metric->name, ml->metric->name)) {
+	AST_RWLIST_TRAVERSE_SAFE_BEGIN(&ast_metrics, mn, list) {
+		if (!strcasecmp(metric->name, mn->metric->name)) {
 			AST_LIST_REMOVE_CURRENT(list);
-			ast_free(ml);
+			ast_free(mn);
 			metric_count--;
 			ast_debug(1, "Unregistered metric '%s'\n", metric->name);
 			break;
@@ -162,7 +157,7 @@ int ast_metric_unregister(struct ast_metric *metric)
 	}
 	AST_LIST_TRAVERSE_SAFE_END
 
-	AST_RWLIST_UNLOCK(&metrics);
+	AST_RWLIST_UNLOCK(&ast_metrics);
 
 	ast_debug(1, "Registered metric '%s' ('%s') with type '%s'\n",
 			      metric->name, metric->description, ast_metric_type2str(metric->type));

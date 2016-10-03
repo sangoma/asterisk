@@ -69,6 +69,13 @@ static struct ast_metric mname = \
 	.func = mfunc \
 }
 
+struct ast_metric_node {
+	struct ast_metric *metric;
+	AST_LIST_ENTRY(ast_metric_node) list;
+};
+AST_RWLIST_HEAD(ast_metrics, ast_metric_node);
+extern struct ast_metrics ast_metrics;
+
 /*!
  * \brief Initialize metrics support within the core.
  *
